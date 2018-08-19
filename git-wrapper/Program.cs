@@ -83,9 +83,13 @@ namespace git_wrapper {
 			outputThread.IsBackground = errorThread.IsBackground = inputThread.IsBackground = true;
 
 			// Signal to end the application
-			ManualResetEvent stopApp = new ManualResetEvent( false );
+			var stopApp = new ManualResetEvent( false );
 
 			p.Exited += ( e, sender ) => { stopApp.Set(); };
+
+#if DEBUG
+			//Debugger.Launch();
+#endif
 
 			p.Start();
 
@@ -97,6 +101,7 @@ namespace git_wrapper {
 			// Wait for the child app to stop
 			stopApp.WaitOne();
 
+			// Wait for the child app to clean up
 			p.WaitForExit();
 
 			//var ret = ((1 == p.ExitCode) ? 0 : ((0 == p.ExitCode) ? 1 : p.ExitCode));
@@ -136,12 +141,16 @@ namespace git_wrapper {
 			while( true ) {
 				int len;
 				while( (len = instream.Read( buffer, 0, buffer.Length )) > 0 ) {
+					outstream.Write( buffer, 0, len );
+					outstream.Flush();
+
 #if DEBUG
 					log += Encoding.UTF8.GetString( buffer, 0, len );
 #endif
-					outstream.Write( buffer, 0, len );
-					outstream.Flush();
 				}
+
+				// Prevent wrapper from cunsuming too much CPU Time
+				Thread.Sleep( 1 );
 			}
 		}
 
@@ -169,7 +178,12 @@ namespace git_wrapper {
 			var process = (Process)p;
 			// Pass our standard input into the standard input of the child
 #if DEBUG
-			passThrough( Console.OpenStandardInput(), process.StandardInput.BaseStream, ref input );
+			var inputStream = Console.OpenStandardInput();
+			if( inputStream == Stream.Null) {
+				inputStream = new MemoryStream( 8192 );
+				Console.SetIn( new StreamReader( inputStream ) );
+			}
+			passThrough( inputStream, process.StandardInput.BaseStream, ref input );
 #else
 			passThrough( Console.OpenStandardInput(), process.StandardInput.BaseStream );
 #endif
